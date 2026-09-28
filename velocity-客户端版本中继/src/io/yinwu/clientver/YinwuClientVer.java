@@ -8,12 +8,10 @@ import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
-import com.velocitypowered.api.proxy.server.RegisteredServer;
 import org.slf4j.Logger;
 
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -84,15 +82,18 @@ public final class YinwuClientVer {
             logger.info("[clientver] 无法确定 {} 的客户端版本，跳过", player.getUsername());
             return;
         }
-        Optional<RegisteredServer> target = player.getCurrentServer()
-                .map(connection -> connection.getServer());
-        if (target.isEmpty()) {
-            return;
-        }
         byte[] payload = version.getBytes(StandardCharsets.UTF_8);
-        target.get().sendPluginMessage(channel, payload);
-        logger.info("[clientver] {} -> {}（客户端 MC {}）", player.getUsername(),
-                target.get().getServerInfo().getName(), version);
+
+        // 必须走玩家自己的 ServerConnection：RegisteredServer#sendPluginMessage 是“服务器级”发送，
+        // 不带玩家上下文，后端会把版本归给该子服上任意一个在线玩家 —— 单人时看似正常，
+        // 多人同服就会串号（26.2 的客户端收到 26.3 的串、26.3 的收到 26.1 的串）。
+        player.getCurrentServer().ifPresentOrElse(
+                connection -> {
+                    connection.sendPluginMessage(channel, payload);
+                    logger.info("[clientver] {} -> {}（客户端 MC {}）", player.getUsername(),
+                            connection.getServerInfo().getName(), version);
+                },
+                () -> logger.info("[clientver] {} 当前不在任何子服上，跳过", player.getUsername()));
     }
 
     /**
