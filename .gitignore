@@ -1,0 +1,12 @@
+# 构建产物
+out/
+*.class
+*.jar.tmp
+
+# 第三方客户端 mod（不要随仓库分发，让使用者自行从 Modrinth/CurseForge 获取）
+客户端mod/
+
+# 本机内容 / 草稿
+*.log
+.DS_Store
+Thumbs.db

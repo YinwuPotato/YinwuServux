@@ -1,0 +1,31 @@
+# YinwuServux 配置
+# 在 Canvas / Paper 服务端实现 Servux 的 servux:entity_data 协议，供 MiniHUD 使用：
+#   · 容器预览：看向箱子/木桶/潜影盒等容器时在 HUD 上显示内容（方块实体分支）
+#   · 村民信息/交易显示：看向村民（例如图书管理员找经验修补）时显示职业、等级、交易（实体分支）
+#   · 实体容器：箱子船 / 驴 / 展示框等（实体分支）
+
+# 生效权限：留空 = 所有玩家都能用（＝ Servux 原版行为，但等于允许别人查看附近容器与实体数据）
+# 建议填 yinwu.servux.use，然后用 LuckPerms 授权：
+#   /lp group default permission set yinwu.servux.use true
+permission: ""
+
+# 元数据里回报的 Servux 版本串。
+# 客户端 MiniHUD 会校验它必须以 "servux-fabric-<客户端MC版本>" 开头，否则直接关掉该功能。
+# 服务器是 26.3，26.3 客户端对应的就是下面这个值。
+servux-version-string: "servux-fabric-26.3"
+
+# 允许请求的方块/实体与玩家眼睛的最大距离（格）。0 = 不限制。
+# 8 格足够"看向即显示"，同时能挡住改包客户端远程翻箱。
+max-distance: 8.0
+
+# 每个玩家每秒最多请求次数（0 = 不限制）
+# 注意：MiniHUD 的"图书管理员交易搜索"会对范围内每个村民各发一次实体请求，
+# 所以别设太小；MiniHUD 客户端自己也有请求限速，这里留出余量（默认 40/秒）。
+max-requests-per-second: 40
+
+# 当请求的是【其他玩家】实体时，是否把其物品栏/末影箱内容一并返回。
+# false（默认，与 Servux 默认一致）：清空 Inventory / EnderItems，只给外观类数据。
+allow-other-player-inventory: false
+
+# 是否把每个请求/回包打进控制台（排查用）
+debug: false
