@@ -84,6 +84,35 @@ if (version != 2 || !servux.startsWith("servux-fabric-" + MaLiLibReference.MC_VE
 区间名（如 `26.1-26.1.2`）取前半段；读不到时退回 `config.yml` 的 `servux-version-string`。
 识别成功且与自身版本不同时，每位玩家只记一条 INFO；`debug: true` 可看逐条明细。
 
+#### 同协议号多小版本：必须用改写表兜（2026-09-28 实测踩到）
+
+ViaVersion 与 Velocity 都**无法区分共用同一协议号的小版本**：
+
+| 协议号 | 覆盖的 MC 版本 | ViaVersion 给出的名字 |
+|---|---|---|
+| 775 | 26.1 / 26.1.1 / 26.1.2 | `26.1-26.1.2`（区间） |
+| 773 | 1.21.9 / 1.21.10 | `1.21.9-1.21.10`（区间） |
+
+自动识别只能取区间前半段（`26.1`），于是**26.1.1 / 26.1.2 客户端会被它自己拒绝**：
+
+```
+Mis-matched protocol version! (Expected: 2 but got 2 running on: servux-fabric-26.1)
+```
+
+解决：`config.yml` 里两张改写表（改完 `/yinwuservux reload` 生效，无需重启）——
+
+```yaml
+# 按识别到的版本改写（影响该版本的所有玩家；若同协议号玩家版本不一，优先用下面按玩家名的表）
+client-version-overrides:
+  "26.1": "26.1.2"
+
+# 按玩家名改写（key 不区分大小写，最保险）
+player-version-overrides:
+  youddw: "26.1.2"
+```
+
+版本号问玩家即可（F3 调试界面第一行就是完整版本号）。
+
 ### 版本从代理拿：`velocity-客户端版本中继`
 
 **实测发现后端拿不到真实版本**：代理上的 ViaVersion 已经把协议翻译成服务端版本，所以后端 ViaVersion 对 26.2 客户端也只报 26.3
