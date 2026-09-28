@@ -200,11 +200,11 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         }
         UUID id = player.getUniqueId();
         String previous = clientVersions.put(id, version);
-        boolean crossVersion = !version.equals(Bukkit.getMinecraftVersion());
-        if (!version.equals(previous)) {
+        // 默认静默：代理告知属于常规信息（每位玩家进服都会有一条），要看就把 config.yml 的 debug 打开
+        if (debug && !version.equals(previous)) {
             getLogger().info("[servux] 代理告知 " + player.getName() + " 的客户端是 MC " + version
-                    + (crossVersion ? "（服务端 " + Bukkit.getMinecraftVersion() + "，跨版本）"
-                                    : "（与服务端一致）"));
+                    + (version.equals(Bukkit.getMinecraftVersion()) ? "（与服务端一致）"
+                                                                    : "（服务端 " + Bukkit.getMinecraftVersion() + "，跨版本）"));
         }
         // 已经握过手就按正确版本补发一次元数据（客户端若已注销则无害，若还在等则正好用上）
         if (registered.contains(id)) {
@@ -321,13 +321,9 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
                     + "，MC=" + (clientMc == null ? "未识别" : clientMc) + "，回 servux=\"" + servuxString
                     + "\"，原始: " + hex);
         } else if (clientMc == null && warnedIncompatible.add(id)) {
+            // 真正需要管理员知道的情况才打日志：识别不出客户端版本时，跨版本客户端会握手失败
             getLogger().info("[servux] " + player.getName() + " 的客户端 MC 版本未能识别，已用兜底版本串 \""
                     + servuxString + "\" 回包（同版本客户端可用，跨版本客户端会拒绝）。原始前 24 字节: " + hex);
-        } else if (clientMc != null && !clientMc.equals(Bukkit.getMinecraftVersion())
-                && warnedIncompatible.add(id)) {
-            getLogger().info("[servux] " + player.getName() + " 是跨版本客户端（MC " + clientMc
-                    + "，服务端 " + Bukkit.getMinecraftVersion() + "），已按它的版本回 servux-fabric-"
-                    + clientMc + " —— 这正是多版本支持的关键一步");
         }
 
         if (!hasPermission(player)) {

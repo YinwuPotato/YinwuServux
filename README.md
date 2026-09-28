@@ -99,6 +99,9 @@ if (version != 2 || !servux.startsWith("servux-fabric-" + MaLiLibReference.MC_VE
 
 ### 实测记录（2026-09-28 14:10，本服）
 
+> 下面这些 `代理告知 …` / `是跨版本客户端 …` 行现在**默认不再显示**（已挪进 `debug: true` 分支），
+> 保留在文档里作为当时的验证证据。日常只会在出问题时看到一条「客户端 MC 版本未能识别」。
+
 ```
 # Velocity
 [clientver] qumingjam -> van（客户端 MC 26.2）
