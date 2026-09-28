@@ -2,6 +2,7 @@
 out/
 *.class
 *.jar.tmp
+build-args.txt
 
 # 第三方客户端 mod（不要随仓库分发，让使用者自行从 Modrinth/CurseForge 获取）
 客户端mod/
