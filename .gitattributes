@@ -1,0 +1,6 @@
+# 统一换行符：仓库里存 LF，Windows 检出时批处理用 CRLF
+* text=auto
+*.bat text eol=crlf
+*.jar binary
+*.png binary
+*.zip binary

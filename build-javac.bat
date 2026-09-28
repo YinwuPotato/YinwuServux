@@ -13,12 +13,18 @@ rem =====================================================================
 
 set "OUT_JAR=yinwu-servux-1.0.0.jar"
 
-rem 服务器根目录：优先用环境变量 YINWU_SERVER_ROOT，其次用下面的默认值。
+rem 服务器根目录：用环境变量 YINWU_SERVER_ROOT 指定（下面第二节会检查）。
 rem 脚本需要该目录下的 Van\libraries\（API + 依赖）和 Van\versions\（服务端 jar）。
-if not defined YINWU_SERVER_ROOT set "YINWU_SERVER_ROOT=C:\Users\Yinwu\Documents\Yinwu_release"
 set "SERVER_ROOT=%YINWU_SERVER_ROOT%"
 
 rem ---------- 1. 找 API jar 和服务端 jar ----------
+if not defined SERVER_ROOT (
+  echo [ERR] 请先指定服务器根目录，例如：
+  echo       set "YINWU_SERVER_ROOT=D:\myserver"
+  echo       该目录下应有 Van\libraries\ 与 Van\versions\
+  pause
+  exit /b 1
+)
 set "API_JAR="
 for /f "delims=" %%F in ('dir /b /s /o-d "%SERVER_ROOT%\Van\libraries\io\canvasmc\canvas\canvas-api\canvas-api-*.jar" 2^>nul') do (
   if not defined API_JAR set "API_JAR=%%~fF"

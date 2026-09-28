@@ -104,12 +104,12 @@ if (version != 2 || !servux.startsWith("servux-fabric-" + MaLiLibReference.MC_VE
 
 ```
 # Velocity
-[clientver] qumingjam -> van（客户端 MC 26.2）
-[clientver] zmc2025  -> van（客户端 MC 26.3）
+[clientver] 玩家甲 -> van（客户端 MC 26.2）
+[clientver] 玩家乙 -> van（客户端 MC 26.3）
 # Van
-[servux] 代理告知 qumingjam 的客户端是 MC 26.2（服务端 26.3，跨版本）
-[servux] qumingjam 是跨版本客户端（MC 26.2，服务端 26.3），已按它的版本回 servux-fabric-26.2
-[servux] 代理告知 zmc2025 的客户端是 MC 26.3（与服务端一致）
+[servux] 代理告知 玩家甲 的客户端是 MC 26.2（服务端 26.3，跨版本）
+[servux] 玩家甲 是跨版本客户端（MC 26.2，服务端 26.3），已按它的版本回 servux-fabric-26.2
+[servux] 代理告知 玩家乙 的客户端是 MC 26.3（与服务端一致）
 ```
 
 - 26.2 客户端：容器预览 / 村民信息恢复正常，不再出现 `Mis-matched protocol version` ✓
