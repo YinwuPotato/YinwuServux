@@ -1,0 +1,15 @@
+servux: 用 ViaVersion 查出客户端 MC 版本，真正实现跨版本兼容
+
+实测（线上日志 hex）发现客户端握手包只有 16 字节 {version:2}、没有 servux 版本串，
+所以上一版的「回显客户端版本串」在真机上是空转的。反编译 MiniHUD 0.40.7 的
+receiveServuxMetadata 确认校验为：version == 2 且
+servux.startsWith("servux-fabric-" + MaLiLibReference.MC_VERSION)；
+不满足则发 UnregisterReply、注销通道并关掉 ENTITY_DATA_SYNC
+（26.2 客户端拿到 26.3 的版本串会直接失去全部数据）。
+
+改动：反射调用 ViaVersion API（无硬依赖）取客户端协议号，映射成 MC 版本名后回对应版本串：
+  ViaAPI#getPlayerProtocolVersion(UUID) -> ProtocolVersion#getName()
+  实测：777=26.3, 776=26.2, 774=1.21.11（本机用 ViaVersion 5.12.1 跑通映射）
+  区间名取前半段；读不到时退回 config.yml 的 servux-version-string
+识别到跨版本客户端时每位玩家记一条 INFO；debug 模式显示逐条握手明细。
+顺带把构建产物 build-args.txt 移出版本控制。

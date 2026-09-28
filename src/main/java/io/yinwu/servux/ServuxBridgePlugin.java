@@ -100,6 +100,19 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
     /** 记录「已提示过该玩家握手异常」，每位玩家每次进服只提示一条，避免刷屏 */
     private final Set<UUID> warnedIncompatible = ConcurrentHashMap.newKeySet();
 
+    /** ViaVersion 的 API 类名（5.x 与旧版包名不同，逐个尝试；全程反射，不产生硬依赖） */
+    private static final String[] VIA_API_CLASSES = {
+            "com.viaversion.viaversion.api.Via",
+            "us.myles.ViaVersion.api.Via"
+    };
+    private static final String VIA_API_INTERFACE = "com.viaversion.viaversion.api.ViaAPI";
+    private static final String[] VIA_PROTOCOL_CLASSES = {
+            "com.viaversion.viaversion.api.protocol.version.ProtocolVersion",
+            "us.myles.ViaVersion.api.protocol.ProtocolVersion"
+    };
+    private Class<?> viaApiClass;
+    private Class<?> viaProtocolClass;
+
     // ---- config.yml ----
     private String permission = "";
     private String servuxVersionString = "servux-fabric-26.3";
@@ -240,18 +253,31 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
             clientServux = scanString(raw, "servux");
         }
 
-        // 回显客户端自报的版本与版本串 → 各版本客户端都能通过自己的校验；读不到则用配置里的默认值
-        sendMetadata(player,
-                clientVersion > 0 ? clientVersion : PROTOCOL_VERSION,
-                clientServux.isEmpty() ? servuxVersionString : clientServux);
+        // 版本串：客户端握手包里只有 version、没有 servux 字符串，所以必须自己查出它的 MC 版本
+        String clientMc = detectClientMcVersion(player);
+        String servuxString;
+        if (clientMc != null) {
+            servuxString = "servux-fabric-" + clientMc;
+        } else if (!clientServux.isEmpty()) {
+            servuxString = clientServux;            // 客户端将来若带上版本串，就原样回显
+        } else {
+            servuxString = servuxVersionString;     // 兜底：配置里的值（同版本客户端可用）
+        }
+
+        sendMetadata(player, clientVersion > 0 ? clientVersion : PROTOCOL_VERSION, servuxString);
 
         if (debug) {
             getLogger().info("[servux] 握手 " + player.getName() + "：客户端 version=" + clientVersion
-                    + "，servux=\"" + clientServux + "\"，原始: " + hex);
-        } else if (clientServux.isEmpty() && warnedIncompatible.add(id)) {
-            getLogger().info("[servux] " + player.getName() + " 的握手数据里读不出 servux 版本串（version="
-                    + clientVersion + "），已按上游做法照常回包并供数；"
-                    + "若其 MiniHUD 没有数据显示，请把这条日志发给管理员。原始前 24 字节: " + hex);
+                    + "，MC=" + (clientMc == null ? "未识别" : clientMc) + "，回 servux=\"" + servuxString
+                    + "\"，原始: " + hex);
+        } else if (clientMc == null && warnedIncompatible.add(id)) {
+            getLogger().info("[servux] " + player.getName() + " 的客户端 MC 版本未能识别，已用兜底版本串 \""
+                    + servuxString + "\" 回包（同版本客户端可用，跨版本客户端会拒绝）。原始前 24 字节: " + hex);
+        } else if (clientMc != null && !clientMc.equals(Bukkit.getMinecraftVersion())
+                && warnedIncompatible.add(id)) {
+            getLogger().info("[servux] " + player.getName() + " 是跨版本客户端（MC " + clientMc
+                    + "，服务端 " + Bukkit.getMinecraftVersion() + "），已按它的版本回 servux-fabric-"
+                    + clientMc + " —— 这正是多版本支持的关键一步");
         }
 
         if (!hasPermission(player)) {
@@ -265,10 +291,88 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
     }
 
     /**
+     * 查询客户端真实的 MC 版本（如 {@code "26.2"}）。
+     *
+     * <p>为什么必须查：MiniHUD 校验的是 {@code servux.startsWith("servux-fabric-" + MaLiLibReference.MC_VERSION)}，
+     * 而客户端握手包里<b>只有 version、没有版本串</b>（实测负载就是 16 字节的 {@code {version:2}}），
+     * 所以服务端回错版本串（例如对 26.2 客户端回 {@code servux-fabric-26.3}）会让客户端
+     * 判为 {@code Mis-matched protocol version}、发 UnregisterReply、注销通道并关掉 ENTITY_DATA_SYNC。
+     *
+     * <p>版本信息来源：ViaVersion 在代理与后端两端都安装时，会把客户端的协议号转给后端，
+     * 这里用反射读取（<b>不产生硬依赖</b>：没装 ViaVersion 或读取失败都只返回 null，退回配置兜底）。
+     *
+     * @return 形如 {@code "26.2"} / {@code "1.21.11"} 的版本名；无法确定时返回 null
+     */
+    private String detectClientMcVersion(Player player) {
+        try {
+            if (viaApiClass == null) {
+                for (String name : VIA_API_CLASSES) {
+                    try {
+                        viaApiClass = Class.forName(name);
+                        break;
+                    } catch (ClassNotFoundException ignored) {
+                        // 试下一个包名
+                    }
+                }
+            }
+            if (viaApiClass == null) {
+                return null;   // 没装 ViaVersion
+            }
+            Object api = viaApiClass.getMethod("getAPI").invoke(null);
+
+            // 优先 ViaAPI.getPlayerProtocolVersion(UUID)（直接给 ProtocolVersion）
+            Object protocolVersion = null;
+            if (viaProtocolClass == null) {
+                for (String name : VIA_PROTOCOL_CLASSES) {
+                    try {
+                        viaProtocolClass = Class.forName(name);
+                        break;
+                    } catch (ClassNotFoundException ignored) {
+                        // 试下一个包名
+                    }
+                }
+            }
+            Class<?> apiInterface = Class.forName(VIA_API_INTERFACE);
+            try {
+                protocolVersion = apiInterface.getMethod("getPlayerProtocolVersion", UUID.class)
+                        .invoke(api, player.getUniqueId());
+            } catch (NoSuchMethodException e) {
+                // 老版 ViaVersion 只有 int 版
+                int protocol = (Integer) apiInterface.getMethod("getPlayerVersion", UUID.class)
+                        .invoke(api, player.getUniqueId());
+                if (protocol > 0 && viaProtocolClass != null) {
+                    protocolVersion = viaProtocolClass.getMethod("getProtocol", int.class).invoke(null, protocol);
+                }
+            }
+            if (protocolVersion == null || viaProtocolClass == null) {
+                return null;
+            }
+
+            String name = String.valueOf(viaProtocolClass.getMethod("getName").invoke(protocolVersion));
+            // 区间名（如 "26.1-26.1.2"、"1.21.9-1.21.10"）取前半段；"Unknown (778)" 之类直接判为未知
+            int dash = name.indexOf('-');
+            if (dash > 0) {
+                name = name.substring(0, dash);
+            }
+            if (name.matches("\\d+(\\.\\d+)+")) {
+                return name;
+            }
+            if (debug) {
+                getLogger().info("[servux] " + player.getName() + " 的客户端版本名无法识别：\"" + name + "\"");
+            }
+        } catch (Throwable t) {
+            if (debug) {
+                getLogger().info("[servux] 读取 " + player.getName() + " 的客户端版本失败：" + t);
+            }
+        }
+        return null;
+    }
+
+    /**
      * 回类型 1 元数据。
      *
-     * @param version 回给客户端的协议版本（通常原样回它自报的值，各版本客户端各自校验自己的期望值）
-     * @param servux  版本串，必须与客户端 MC 版本对应 → 直接回显客户端报上来的那一串
+     * @param version 回给客户端的协议版本（原样回它自报的值，各版本客户端各自校验自己的期望值）
+     * @param servux  版本串，必须是 {@code servux-fabric-<客户端MC版本>}，否则客户端会注销通道
      */
     private void sendMetadata(Player player, int version, String servux) {
         CompoundTag metadata = new CompoundTag();

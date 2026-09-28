@@ -59,18 +59,34 @@ if (version != 2 || !servux.startsWith("servux-fabric-" + MC_VERSION)) {
 | 数据响应 | masa gzip | masa gzip | masa gzip |
 
 **线上格式完全一致**（1.21.11 那版只是类名混淆，`class_2540.method_10794` 就是 `FriendlyByteBuf.writeNbt`）。
-唯一随版本变的是 `servux` 版本串。因此插件把客户端自报的 `version` / `servux` **原样回显**：
+唯一随版本变的是 `servux` 版本串 —— 而**客户端握手包里只有 `version`、没有版本串**（实测负载就是 16 字节的 `{version:2}`），
+所以服务端必须自己查出客户端版本。客户端校验（MiniHUD 0.40.7 反编译）：
 
 ```java
-// 不需要知道对方是什么版本，各版本客户端都能通过它自己的 startsWith 校验
-sendMetadata(player, clientVersion > 0 ? clientVersion : PROTOCOL_VERSION,
-                       clientServux.isEmpty() ? servuxVersionString : clientServux);
+int version = nbt.getIntOrDefault("version", -1);
+String servux = nbt.getStringOrDefault("servux", "?");
+if (version != 2 || !servux.startsWith("servux-fabric-" + MaLiLibReference.MC_VERSION)) {
+    LOGGER.warn("entityDataChannel: Mis-matched protocol version! …");
+    if (version >= 2) HANDLER.encodeClientData(UnregisterReply(...));   // 通知服务端注销
+    HANDLER.unregisterPlayReceiver();
+    Configs.Generic.ENTITY_DATA_SYNC.setBooleanValue(false);            // 功能直接关掉
+}
 ```
 
+因此插件通过 **ViaVersion API**（反射，无硬依赖）取客户端协议号并映射成 MC 版本名：
+
+| 协议号 | `ProtocolVersion#getName()` | 回给客户端的版本串 |
+|---|---|---|
+| 777 | `26.3` | `servux-fabric-26.3` |
+| 776 | `26.2` | `servux-fabric-26.2` |
+| 774 | `1.21.11` | `servux-fabric-1.21.11` |
+
+区间名（如 `26.1-26.1.2`）取前半段；读不到时退回 `config.yml` 的 `servux-version-string`。
+识别成功且与自身版本不同时，每位玩家只记一条 INFO；`debug: true` 可看逐条明细。
+
 **支持范围：1.21.11 及以上**（这是 MiniHUD 里第一个带 `ServuxEntitiesPacket` 的世代；1.20.1 的 0.27.1 根本没有这个类，无从支持）。
-更早的插件实现有个真 bug：版本号读不到（`-1`）就**不回包**，客户端收不到元数据会一直重试（实测每秒 11 次）把日志刷爆，
-而且让本来能用的客户端（26.2 的 MiniHUD 0.40.x）完全拿不到数据。现在改为照上游做法**一律回包、一律供数**，
-读不出握手内容时**每位玩家只记一条 INFO**（含原始前 24 字节，便于排查），不再刷屏。
+更早的实现有个真 bug：版本号读不到（`-1`）就**不回包**，客户端收不到元数据会一直重试（实测每秒 11 次）把日志刷爆，
+而且让本来能用的客户端完全拿不到数据。现在改为照上游做法**一律回包、一律供数**，读不出握手内容时每位玩家只记一条 INFO。
 
 ---
 
