@@ -97,6 +97,30 @@ if (version != 2 || !servux.startsWith("servux-fabric-" + MaLiLibReference.MC_VE
 
 两个插件必须**成对使用**：只装后端则退回后端 ViaVersion（跨版本会失败），只装中继则后端收不到版本串。
 
+### 实测记录（2026-09-28 14:10，本服）
+
+```
+# Velocity
+[clientver] qumingjam -> van（客户端 MC 26.2）
+[clientver] zmc2025  -> van（客户端 MC 26.3）
+# Van
+[servux] 代理告知 qumingjam 的客户端是 MC 26.2（服务端 26.3，跨版本）
+[servux] qumingjam 是跨版本客户端（MC 26.2，服务端 26.3），已按它的版本回 servux-fabric-26.2
+[servux] 代理告知 zmc2025 的客户端是 MC 26.3（与服务端一致）
+```
+
+- 26.2 客户端：容器预览 / 村民信息恢复正常，不再出现 `Mis-matched protocol version` ✓
+- 26.3 客户端：回的就是 `servux-fabric-26.3`，行为与改动前一致 ✓
+- 时序：中继到达（14:10:50）早于客户端握手（14:10:59）✓ —— `ServerPostConnectEvent` 早于客户端的元数据请求，无需补发即可命中
+
+### 踩过的坑
+
+| 现象 | 原因 | 修复 |
+|---|---|---|
+| 客户端 `Mis-matched protocol version! (Expected: 2 but got 2 running on: servux-fabric-26.3)` + `Unknown custom packet payload` | 客户端握手包只有 `{version:2}`，服务端不知道对方 MC 版本，回了配置里的 26.3 | 中继插件取真实版本 |
+| 后端 ViaVersion 对 26.2 客户端也报 26.3 | 代理上的 ViaVersion 已把协议翻译完，后端看到的是翻译后的版本 | 改由代理侧取原始版本 |
+| Velocity 报 `Can't create plugin yinwu-clientver / No injectable constructor` | 用了 `javax.inject.Inject`，Velocity 4.2 的 Guice 7 不再支持 | 改用 `com.google.inject.Inject`（本地用同一套 Guice 预检通过） |
+
 **支持范围：1.21.11 及以上**（这是 MiniHUD 里第一个带 `ServuxEntitiesPacket` 的世代；1.20.1 的 0.27.1 根本没有这个类，无从支持）。
 更早的实现有个真 bug：版本号读不到（`-1`）就**不回包**，客户端收不到元数据会一直重试（实测每秒 11 次）把日志刷爆，
 而且让本来能用的客户端完全拿不到数据。现在改为照上游做法**一律回包、一律供数**，读不出握手内容时每位玩家只记一条 INFO。
