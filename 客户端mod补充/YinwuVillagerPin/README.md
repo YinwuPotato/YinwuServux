@@ -100,5 +100,7 @@ gradlew.bat build
 ## 7. 已知边界
 
 - 只为「村民信息牌的位置」服务；容器预览、交易内容等本来就由 MiniHUD + Servux 负责
-- MiniHUD 大版本更新后，若 `renderAtEntity` 方法名/签名变化，本 mixin 需要同步跟进（`fabric.mod.json` 里限制了 `<26.4`，避免误加载到不兼容版本上）
+- MiniHUD 大版本更新后，若 `renderAtEntity` 方法名/签名变化，本 mixin 需要同步跟进。已经做了两层保护：
+  - `fabric.mod.json` 把 MiniHUD 限制在 `>=0.41.0 <0.42.0`、MC 限制在 `>=26.3 <26.4`，版本不对时 Fabric 直接拒绝加载（不会崩）
+  - mixin 配置为 `required: false` + `defaultRequire: 0`：即使将来签名变了，也**只在日志里留一条 warning，客户端照常启动**，效果自动缺席
 - 吸附的前提是「村民离讲台 1.7 格以内」（MiniHUD 的原有条件），村民走远时牌子仍会跟走 —— 这与单人模式的行为一致
