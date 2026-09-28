@@ -84,6 +84,19 @@ if (version != 2 || !servux.startsWith("servux-fabric-" + MaLiLibReference.MC_VE
 区间名（如 `26.1-26.1.2`）取前半段；读不到时退回 `config.yml` 的 `servux-version-string`。
 识别成功且与自身版本不同时，每位玩家只记一条 INFO；`debug: true` 可看逐条明细。
 
+### 版本从代理拿：`velocity-客户端版本中继`
+
+**实测发现后端拿不到真实版本**：代理上的 ViaVersion 已经把协议翻译成服务端版本，所以后端 ViaVersion 对 26.2 客户端也只报 26.3
+（线上症状：26.2 客户端日志 `Mis-matched protocol version! (Expected: 2 but got 2 running on: servux-fabric-26.3)`，
+随后 `Unknown custom packet payload: servux:entity_data`）。因此加了一个极小的 Velocity 插件：
+
+- `velocity-客户端版本中继\yinwu-clientver-1.0.0.jar` → 放进 `velocity\plugins\`
+- 它取玩家的**原始**协议版本（优先 ViaVersion 的 `ViaAPI#getPlayerProtocolVersion`，退回 Velocity 自带的 `Player#getProtocolVersion`），
+  在 `ServerPostConnectEvent` 时通过频道 `yinwu:clientver` 把版本串（如 `26.2`）发给后端
+- 后端 YinwuServux 收到后按玩家记住，握手时优先用它；若该玩家已握过手，还会按正确版本补发一次元数据
+
+两个插件必须**成对使用**：只装后端则退回后端 ViaVersion（跨版本会失败），只装中继则后端收不到版本串。
+
 **支持范围：1.21.11 及以上**（这是 MiniHUD 里第一个带 `ServuxEntitiesPacket` 的世代；1.20.1 的 0.27.1 根本没有这个类，无从支持）。
 更早的实现有个真 bug：版本号读不到（`-1`）就**不回包**，客户端收不到元数据会一直重试（实测每秒 11 次）把日志刷爆，
 而且让本来能用的客户端完全拿不到数据。现在改为照上游做法**一律回包、一律供数**，读不出握手内容时每位玩家只记一条 INFO。

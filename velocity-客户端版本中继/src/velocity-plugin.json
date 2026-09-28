@@ -1,0 +1,8 @@
+{
+  "id": "yinwu-clientver",
+  "name": "YinwuClientVer",
+  "version": "1.0.0",
+  "description": "把玩家真实客户端 MC 版本告知后端，供 YinwuServux 的跨版本握手使用",
+  "authors": ["YinwuRealm"],
+  "main": "io.yinwu.clientver.YinwuClientVer"
+}
