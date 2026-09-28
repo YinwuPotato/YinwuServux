@@ -153,7 +153,16 @@ if (version != 2 || !servux.startsWith("servux-fabric-" + MaLiLibReference.MC_VE
 
 ## 3. 安装
 
-1. 构建：双击 `build-javac.bat`（需要 JDK 25；脚本会自动找 canvas-api、服务端 jar 和 `Van\libraries\` 全部依赖）
+1. 构建：先指定服务器根目录再运行 `build-javac.bat`（需要 JDK 25）：
+
+   ```bat
+   set "YINWU_SERVER_ROOT=D:\myserver"
+   build-javac.bat
+   ```
+
+   脚本会自动找 **最新** 的 `canvas-api-*.jar`、`Van\versions\canvas-*.jar` 与 `Van\libraries\` 下全部依赖。
+   （classpath 有 1.4 万字符，超过 cmd 的 `set` 上限 8191，所以脚本委托 PowerShell 写 javac 的 `@argfile` ——
+   直接在批处理里拼 classpath 会被静默截断，表现为莫名的 `找不到 net.md_5.bungee.api.chat.BaseComponent`。）
 2. 把 `yinwu-servux-1.0.0.jar` 放进 `<服务器>\Van\plugins\`
 3. 重启 Van（首次会释放 `plugins/YinwuServux/config.yml`）
 4. 启动日志应出现：
