@@ -1,5 +1,5 @@
 {
-	"required": true,
+	"required": false,
 	"minVersion": "0.8",
 	"package": "io.yinwu.villagerpin.mixin",
 	"compatibilityLevel": "JAVA_21",
@@ -7,6 +7,6 @@
 		"MixinOverlayRendererVillagerInfo"
 	],
 	"injectors": {
-		"defaultRequire": 1
+		"defaultRequire": 0
 	}
 }
