@@ -1,0 +1,34 @@
+Environment
+- Client: MiniHUD 0.41.2 (26.3) + malilib 0.30.2, Fabric
+- Server: Paper/Folia-based server (Minecraft 26.3)
+  The server is Bukkit/Paper-based, so the Servux mod itself cannot be installed there.
+  Instead a server-side plugin implements the same servux:entity_data protocol
+  (metadata handshake + entity requests), byte-compatible with Servux.
+
+What happens
+- Singleplayer: the villager info text plate snaps to the villager's job site (lectern)
+  when the villager is within 1.7 blocks — works as intended.
+- Multiplayer: the plate always follows the villager and never attaches to the lectern,
+  even when the villager stands right next to / on top of it.
+
+Why (from the sources)
+- OverlayRendererVillagerInfo.renderAtEntity() reads:
+      living.getBrain().getMemoryInternal(MemoryModuleType.JOB_SITE)
+- `living` comes from EntityUtils.getEntitiesByClass():
+      ids are collected from mc.level, then resolved via WorldUtils.getBestWorld(mc)
+- WorldUtils.getBestWorld() returns the integrated server's level when one exists,
+  otherwise mc.level:
+      singleplayer -> server-side entity  -> real brain  -> JOB_SITE present -> attaches
+      multiplayer  -> client-side entity  -> vanilla never syncs brain memories
+                                            -> JOB_SITE always empty -> branch is dead
+
+Suggestion
+- The entity data MiniHUD already requests from Servux (servux:entity_data, types 4/6)
+  contains "Brain": the server side serialises entities with Entity#saveWithoutId(...),
+  which writes TAG_BRAIN including the packed `minecraft:job_site` memory.
+- So the plate position could be derived from the cached NBT
+  (e.g. Brain.memories."minecraft:job_site".value) instead of the local entity's brain,
+  which would make the feature work on multiplayer servers too.
+- Alternatively, applying the received Brain tag to the client-side entity would make the
+  existing check work as-is — note there is already an IMixinEntity exposing
+  readAdditionalSaveData that currently has no callers.

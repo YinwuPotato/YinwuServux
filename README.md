@@ -147,3 +147,6 @@ else                                    return mc.level;              // 多人 
 所以：**村民站在讲台上时看起来"贴着讲台"，是"牌子在村民头顶"的视觉效果**；村民被困在讲台后方（本服的实际布局）时，牌子就停在讲台后方 —— 这是标准表现，不是本插件的问题。
 
 > 若确实需要"多人下也钉在讲台"，只能改客户端（例如 mixin `OverlayRendererVillagerInfo.renderAtEntity`，改为读取 MiniHUD 已缓存的实体 NBT 里的 `Brain.memories."minecraft:job_site"` —— 而这份数据本插件已经在发，日志可见 `含Brain=true`）。
+
+**该客户端补丁已实现并构建完成**，见 `客户端mod补充\YinwuVillagerPin\`（源码）与 `客户端mod补充\yinwu-villager-pin-1.0.0.jar`（成品，仅客户端，可选装）。
+思路：MiniHUD 已经把含 `Brain` 的实体 NBT 缓存在本地（数据来自本插件），补丁在渲染前把其中的 `job_site` 写进客户端村民的脑，MiniHUD 原有的吸附判定随即自行通过 —— 不改 MiniHUD 一行逻辑，服务端零改动，没装的人完全不受影响。

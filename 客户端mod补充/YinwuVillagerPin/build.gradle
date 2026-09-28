@@ -1,0 +1,36 @@
+plugins {
+	// 26.3 时代游戏不再混淆，因此不需要任何 mappings（与 masa 系 MiniHUD/malilib 的构建方式一致）
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+repositories {
+	// 本地 libs/ 里的 MiniHUD / malilib 直接作为编译期依赖（同样未混淆，无需重映射）
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// 仅编译期依赖：把 MiniHUD / malilib 的 jar 放到 libs/ 下（默认文件名 minihud.jar / malilib.jar）
+	compileOnly files('libs/minihud.jar')
+	compileOnly files('libs/malilib.jar')
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.encoding = "UTF-8"
+	// Minecraft 26.1+ 使用 Java 25
+	it.options.release = 25
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}

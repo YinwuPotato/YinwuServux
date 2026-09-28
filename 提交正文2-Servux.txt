@@ -1,0 +1,46 @@
+Since Servux is a Fabric mod, servers running Paper/Folia cannot install it. We implemented the
+servux:entity_data protocol as a standalone Bukkit/Paper/Folia plugin, verified byte-compatible
+with Servux 0.12.2 (26.3), and it works with unmodified MiniHUD 0.41.2 on 26.3.
+
+It covers both branches of the protocol, so Paper/Folia servers get the same two features:
+- container preview for block containers (chests, barrels, shulkers, furnaces, hoppers, …)
+- entity previews: villager info & librarian trade display, chest boats, donkeys, item frames
+
+What it implements
+- Channel: servux:entity_data, packets as varint type ids (1 metadata, 2 metadata request,
+  3 block entity request, 4 entity request, 5/6 simple NBT responses, 7 unregister)
+- Feature coverage: container preview via the block-entity branch (3 → 5), entity previews
+  (villager info/trades, chest boats, donkeys, item frames) via the entity branch (4 → 6)
+- Handshake: replies to the metadata request with {version: 2, servux: "servux-fabric-<mcver>"},
+  which the client validates before it accepts any data
+- Block entities: BlockEntity#saveWithFullMetadata(registryAccess)
+- Entities: TagValueOutput.createWithContext(ProblemReporter.DISCARDING, registryAccess) +
+  Entity#saveWithoutId(...) + the "id" field, i.e. the same call chain Servux uses, so the
+  payload contents are identical (including TAG_BRAIN with the packed memories)
+- NBT wire format matches DataByteBufUtils: [int length][gzip([byte 10][UTF ""][nbt payload])]
+  (equivalent to NbtIO.writeAnyTag; note FriendlyByteBuf#writeNbt is NOT compressed and will not parse)
+- Player entities: Inventory / EnderItems stripped unless explicitly allowed (Servux default)
+
+Folia / region-thread safety (the part that took the most care)
+- The plugin message callback runs on the player's region thread: it only reads player state
+- Block entity access is hopped onto the owning region via Bukkit#getRegionScheduler().execute(
+  plugin, world, chunkX, chunkZ, ...) before touching ServerLevel#getBlockEntity
+- Entity lookups run on the player's region (the client only ever asks for entities it is
+  looking at, so they are within the view distance), with a configurable max distance
+- The reply is sent back through the player's EntityScheduler, never from the reading thread
+- plugin.yml declares folia-supported: true
+
+Current limitations (happy to port more if useful)
+- No support for the split packets (10/11) yet: a container whose gzipped NBT exceeds the plugin
+  message limit is skipped with a log line
+- Only the entity_data channel: hud_data / structure_bounding_boxes / litematic_data / tweaks_data
+  are not implemented
+- Permission node + per-player rate limit are configurable (the latter matters for MiniHUD's
+  librarian trade scan, which issues one entity request per villager)
+
+Availability
+- Single self-contained Java source file against the Canvas/Paper API + NMS (Mojang mappings);
+  no third-party dependencies. Builds with JDK 25, --release 21.
+- Can be published as a separate repo/artifact under LGPLv3 (matching Servux) if you want to link
+  it from the README as a third-party server-side implementation, or reworked into a submodule
+  if you'd rather host it here.
