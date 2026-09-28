@@ -1,0 +1,20 @@
+name: YinwuServux
+version: 1.0.0
+main: io.yinwu.servux.ServuxBridgePlugin
+api-version: '26.3'
+folia-supported: true
+authors: [Yinwu]
+description: 在 Canvas/Paper 服务端实现 Servux 的 servux:entity_data 协议，让 MiniHUD 的容器预览可用
+commands:
+  yinwuservux:
+    description: YinwuServux 管理命令
+    usage: /yinwuservux <status|reload>
+    aliases: [yservux]
+    permission: yinwu.servux.admin
+permissions:
+  yinwu.servux.admin:
+    description: 允许使用 /yinwuservux
+    default: op
+  yinwu.servux.use:
+    description: 允许使用 MiniHUD 的容器预览（config.yml 的 permission 填这个时生效）
+    default: true
