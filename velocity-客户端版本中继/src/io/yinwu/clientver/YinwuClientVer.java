@@ -1,5 +1,6 @@
 package io.yinwu.clientver;
 
+import com.google.inject.Inject;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
@@ -10,7 +11,6 @@ import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import org.slf4j.Logger;
 
-import javax.inject.Inject;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
