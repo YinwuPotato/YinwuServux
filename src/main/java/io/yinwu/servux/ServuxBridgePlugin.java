@@ -82,6 +82,15 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
 
     public static final String CHANNEL = "servux:entity_data";
 
+    /**
+     * 代理（Velocity 插件 YinwuClientVer）用来告知「玩家真实客户端 MC 版本」的频道。
+     *
+     * <p>必须要它：代理上的 ViaVersion 已把协议翻译成服务端版本，后端 ViaVersion 看到的永远是 26.3，
+     * 只有代理知道原始版本（实测 26.2 客户端因此收到 servux-fabric-26.3 并被判 Mis-matched）。
+     * 负载是版本串的 UTF-8 字节，如 {@code 26.2}。
+     */
+    public static final String CLIENTVER_CHANNEL = "yinwu:clientver";
+
     private static final int S2C_METADATA = 1;
     private static final int C2S_METADATA_REQUEST = 2;
     private static final int C2S_BLOCK_ENTITY_REQUEST = 3;
@@ -99,6 +108,9 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
     private final Map<UUID, int[]> rateWindows = new ConcurrentHashMap<>();
     /** 记录「已提示过该玩家握手异常」，每位玩家每次进服只提示一条，避免刷屏 */
     private final Set<UUID> warnedIncompatible = ConcurrentHashMap.newKeySet();
+
+    /** 代理中继过来的「玩家真实客户端 MC 版本」（如 26.2），跨版本握手的权威依据 */
+    private final Map<UUID, String> clientVersions = new ConcurrentHashMap<>();
 
     /** ViaVersion 的 API 类名（5.x 与旧版包名不同，逐个尝试；全程反射，不产生硬依赖） */
     private static final String[] VIA_API_CLASSES = {
@@ -127,6 +139,7 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         loadSettings();
         getServer().getMessenger().registerIncomingPluginChannel(this, CHANNEL, this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, CHANNEL);
+        getServer().getMessenger().registerIncomingPluginChannel(this, CLIENTVER_CHANNEL, this);
         getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("[servux] 已启用：通道=" + CHANNEL
                 + "，权限=" + (permission.isEmpty() ? "（所有人）" : permission)
@@ -145,9 +158,11 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
     public void onDisable() {
         getServer().getMessenger().unregisterIncomingPluginChannel(this, CHANNEL, this);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, CHANNEL);
+        getServer().getMessenger().unregisterIncomingPluginChannel(this, CLIENTVER_CHANNEL, this);
         registered.clear();
         rateWindows.clear();
         warnedIncompatible.clear();
+        clientVersions.clear();
         getLogger().info("[servux] 已停用");
     }
 
@@ -167,6 +182,37 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         registered.remove(id);
         rateWindows.remove(id);
         warnedIncompatible.remove(id);
+        clientVersions.remove(id);
+    }
+
+    /**
+     * 收到代理中继的客户端 MC 版本（频道 {@code yinwu:clientver}，负载是 UTF-8 的版本串）。
+     *
+     * <p>这是跨版本握手的权威依据 —— 后端 ViaVersion 因为代理已翻译而只会报服务端版本。
+     * 若该玩家此前已经握手（可能已被回了错误的兜底版本串），这里补发一次正确的元数据。
+     */
+    private void handleClientVersion(Player player, byte[] message) {
+        String version = new String(message, StandardCharsets.UTF_8).trim();
+        if (!version.matches("\\d+(\\.\\d+)+")) {
+            getLogger().warning("[servux] 代理中继的客户端版本串无法识别：\"" + version
+                    + "\"（来自 " + player.getName() + "）");
+            return;
+        }
+        UUID id = player.getUniqueId();
+        String previous = clientVersions.put(id, version);
+        boolean crossVersion = !version.equals(Bukkit.getMinecraftVersion());
+        if (!version.equals(previous)) {
+            getLogger().info("[servux] 代理告知 " + player.getName() + " 的客户端是 MC " + version
+                    + (crossVersion ? "（服务端 " + Bukkit.getMinecraftVersion() + "，跨版本）"
+                                    : "（与服务端一致）"));
+        }
+        // 已经握过手就按正确版本补发一次元数据（客户端若已注销则无害，若还在等则正好用上）
+        if (registered.contains(id)) {
+            sendMetadata(player, PROTOCOL_VERSION, "servux-fabric-" + version);
+            if (debug) {
+                getLogger().info("[servux] 已按代理告知的版本补发元数据给 " + player.getName());
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -174,6 +220,10 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
     // ------------------------------------------------------------------
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
+        if (CLIENTVER_CHANNEL.equals(channel)) {
+            handleClientVersion(player, message);
+            return;
+        }
         if (!CHANNEL.equals(channel)) {
             return;
         }
@@ -304,6 +354,12 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
      * @return 形如 {@code "26.2"} / {@code "1.21.11"} 的版本名；无法确定时返回 null
      */
     private String detectClientMcVersion(Player player) {
+        // 1) 代理中继（最可靠：只有代理知道原始版本）
+        String relayed = clientVersions.get(player.getUniqueId());
+        if (relayed != null) {
+            return relayed;
+        }
+        // 2) 后端 ViaVersion（代理没装中继插件时才有意义 —— 但代理已翻译，通常只会得到服务端版本）
         try {
             if (viaApiClass == null) {
                 for (String name : VIA_API_CLASSES) {
