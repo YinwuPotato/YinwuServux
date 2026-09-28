@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "yinwu-villager-pin",
+	"version": "${version}",
+	"name": "Yinwu Villager Pin",
+	"description": "让 MiniHUD 的村民信息牌像单人模式一样吸附到职业方块（讲台）上：从已缓存的 Servux 实体 NBT 里读取 job_site 记忆并写入客户端村民的脑。",
+	"authors": [
+		"YinwuRealm"
+	],
+	"license": "LGPL-3.0",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"io.yinwu.villagerpin.YinwuVillagerPin"
+		]
+	},
+	"mixins": [
+		{
+			"config": "yinwuvillagerpin.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.16.0",
+		"minecraft": ">=26.3 <26.4",
+		"java": ">=21",
+		"minihud": ">=0.41.0",
+		"malilib": ">=0.30.0"
+	}
+}
