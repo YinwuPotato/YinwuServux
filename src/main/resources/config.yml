@@ -29,3 +29,23 @@ allow-other-player-inventory: false
 
 # 是否把每个请求/回包打进控制台（排查用）
 debug: false
+
+# ---- 同协议号多小版本的兜底（2026-09-28 新增）----
+# ViaVersion 对共用同一协议号的多个小版本只能给出区间名：
+#   775 = 26.1 / 26.1.1 / 26.1.2        773 = 1.21.9 / 1.21.10
+# 客户端校验的是 servux.startsWith("servux-fabric-" + 它自己的精确版本)，
+# 所以自动识别只能取区间前半段（例如 "26.1"），小版本更高的客户端会被它拒绝，日志形如：
+#   Mis-matched protocol version! (Expected: 2 but got 2 running on: servux-fabric-26.1)
+# 下面两张表用来改写版本串，改完执行 /yinwuservux reload 即可生效（无需重启）。
+
+# 按识别到的版本改写（影响所有该版本的玩家）
+client-version-overrides: {}
+# 例：确认客户端实际是 26.1.2 时（注意引号）
+# client-version-overrides:
+#   "26.1": "26.1.2"
+
+# 按玩家名改写（更精细，key 不区分大小写）
+player-version-overrides: {}
+# 例：
+# player-version-overrides:
+#   youddw: "26.1.2"

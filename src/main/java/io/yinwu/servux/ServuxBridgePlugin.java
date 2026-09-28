@@ -18,6 +18,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -30,6 +31,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -112,6 +114,19 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
     /** 代理中继过来的「玩家真实客户端 MC 版本」（如 26.2），跨版本握手的权威依据 */
     private final Map<UUID, String> clientVersions = new ConcurrentHashMap<>();
 
+    /**
+     * 版本改写：检测到的版本 → 实际要回的版本串。
+     *
+     * <p>存在的理由：ViaVersion 对**共用同一协议号**的多个小版本只能给出区间名
+     * （26.1 / 26.1.1 / 26.1.2 都是协议 775；1.21.9 / 1.21.10 都是 773），
+     * 而客户端校验的是 {@code servux.startsWith("servux-fabric-" + 它自己的精确版本)}，
+     * 所以自动识别只能取区间前半段，剩下的靠这里改写。
+     */
+    private final Map<String, String> clientVersionOverrides = new ConcurrentHashMap<>();
+
+    /** 按玩家名（小写）改写版本串，用于同协议号玩家处在不同小版本时精确兜底 */
+    private final Map<String, String> playerVersionOverrides = new ConcurrentHashMap<>();
+
     /** ViaVersion 的 API 类名（5.x 与旧版包名不同，逐个尝试；全程反射，不产生硬依赖） */
     private static final String[] VIA_API_CLASSES = {
             "com.viaversion.viaversion.api.Via",
@@ -174,6 +189,47 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         maxRequestsPerSecond = getConfig().getInt("max-requests-per-second", 10);
         allowOtherPlayerInventory = getConfig().getBoolean("allow-other-player-inventory", false);
         debug = getConfig().getBoolean("debug", false);
+
+        // 版本改写表（同协议号多小版本的兜底），/yinwuservux reload 会重新读取
+        clientVersionOverrides.clear();
+        ConfigurationSection byVersion = getConfig().getConfigurationSection("client-version-overrides");
+        if (byVersion != null) {
+            for (String key : byVersion.getKeys(false)) {
+                String value = String.valueOf(byVersion.get(key)).trim();
+                if (value.matches("\\d+(\\.\\d+)+")) {
+                    clientVersionOverrides.put(key.trim(), value);
+                }
+            }
+        }
+        playerVersionOverrides.clear();
+        ConfigurationSection byPlayer = getConfig().getConfigurationSection("player-version-overrides");
+        if (byPlayer != null) {
+            for (String key : byPlayer.getKeys(false)) {
+                String value = String.valueOf(byPlayer.get(key)).trim();
+                if (value.matches("\\d+(\\.\\d+)+")) {
+                    playerVersionOverrides.put(key.trim().toLowerCase(Locale.ROOT), value);
+                }
+            }
+        }
+    }
+
+    /**
+     * 应用版本改写表：先按玩家名，再按检测到的版本。
+     *
+     * @return 实际要用的版本串（没有改写时原样返回）
+     */
+    private String applyVersionOverride(Player player, String detected) {
+        String byName = playerVersionOverrides.get(player.getName().toLowerCase(Locale.ROOT));
+        if (byName != null) {
+            return byName;
+        }
+        if (detected != null) {
+            String byVer = clientVersionOverrides.get(detected);
+            if (byVer != null) {
+                return byVer;
+            }
+        }
+        return detected;
     }
 
     @EventHandler
@@ -304,7 +360,8 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         }
 
         // 版本串：客户端握手包里只有 version、没有 servux 字符串，所以必须自己查出它的 MC 版本
-        String clientMc = detectClientMcVersion(player);
+        String detectedMc = detectClientMcVersion(player);
+        String clientMc = applyVersionOverride(player, detectedMc);
         String servuxString;
         if (clientMc != null) {
             servuxString = "servux-fabric-" + clientMc;
@@ -318,8 +375,9 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
 
         if (debug) {
             getLogger().info("[servux] 握手 " + player.getName() + "：客户端 version=" + clientVersion
-                    + "，MC=" + (clientMc == null ? "未识别" : clientMc) + "，回 servux=\"" + servuxString
-                    + "\"，原始: " + hex);
+                    + "，MC=" + (detectedMc == null ? "未识别" : detectedMc)
+                    + (clientMc != null && !clientMc.equals(detectedMc) ? "（改写为 " + clientMc + "）" : "")
+                    + "，回 servux=\"" + servuxString + "\"，原始: " + hex);
         } else if (clientMc == null && warnedIncompatible.add(id)) {
             // 真正需要管理员知道的情况才打日志：识别不出客户端版本时，跨版本客户端会握手失败
             getLogger().info("[servux] " + player.getName() + " 的客户端 MC 版本未能识别，已用兜底版本串 \""
