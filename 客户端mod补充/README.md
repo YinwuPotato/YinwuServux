@@ -23,7 +23,8 @@ MiniHUD 的村民信息牌（含**图书管理员附魔书交易**）在**单人
 - **卸**：把 jar 移出 `mods\`，重启客户端 —— 行为立刻恢复原样
 - 没装的玩家：完全不受影响（这个 mod 只在装了 MiniHUD + malilib 的客户端里才会加载）
 
-前提：客户端装了 **MiniHUD 0.41.x（26.3）** + **malilib 0.30.x**，且 MiniHUD 的 **Entity Data Sync 已开启**；服务端有 Servux 数据（本仓库插件或 Fabric 端 Servux）。
+前提：客户端装了 **MiniHUD** + **malilib**（26.2 → 0.40.x + 0.29.x；26.3 → 0.41.x + 0.30.x），且 MiniHUD 的 **Entity Data Sync 已开启**；服务端有 Servux 数据（本仓库插件或 Fabric 端 Servux）。
+**一个 jar 同时支持 26.2 与 26.3**（两版的注入点签名与 API 已逐项核对一致）；1.21.11 及以下需要单独用 Yarn 映射构建，暂未提供。
 
 ## 怎么确认生效
 

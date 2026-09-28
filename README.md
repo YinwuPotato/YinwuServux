@@ -45,8 +45,32 @@ if (version != 2 || !servux.startsWith("servux-fabric-" + MC_VERSION)) {
 }
 ```
 
-所以服务端回的元数据**必须**含 `version = 2` 和以 `servux-fabric-26.3` 开头的 `servux` 字符串。
+所以服务端回的元数据**必须**含 `version = 2` 和以 `servux-fabric-<客户端自己的 MC 版本>` 开头的 `servux` 字符串。
 **在此之前发的方块实体响应会被客户端直接丢弃**。
+
+### 多版本支持（ViaVersion / ViaBackwards，2026-09-28 修订）
+
+代理只翻译游戏协议，**不翻译自建通道的负载**，所以跨版本兼容只能由插件做。实测定论：
+
+| | MiniHUD 0.38.16（1.21.11） | 0.40.7（26.2） | 0.41.2（26.3） |
+|---|---|---|---|
+| 包类型编号 | 1–13 | 1–13 | 1–13 |
+| 握手元数据 | 原版 `writeNbt` | 原版 `writeNbt` | 原版 `writeNbt` |
+| 数据响应 | masa gzip | masa gzip | masa gzip |
+
+**线上格式完全一致**（1.21.11 那版只是类名混淆，`class_2540.method_10794` 就是 `FriendlyByteBuf.writeNbt`）。
+唯一随版本变的是 `servux` 版本串。因此插件把客户端自报的 `version` / `servux` **原样回显**：
+
+```java
+// 不需要知道对方是什么版本，各版本客户端都能通过它自己的 startsWith 校验
+sendMetadata(player, clientVersion > 0 ? clientVersion : PROTOCOL_VERSION,
+                       clientServux.isEmpty() ? servuxVersionString : clientServux);
+```
+
+**支持范围：1.21.11 及以上**（这是 MiniHUD 里第一个带 `ServuxEntitiesPacket` 的世代；1.20.1 的 0.27.1 根本没有这个类，无从支持）。
+更早的插件实现有个真 bug：版本号读不到（`-1`）就**不回包**，客户端收不到元数据会一直重试（实测每秒 11 次）把日志刷爆，
+而且让本来能用的客户端（26.2 的 MiniHUD 0.40.x）完全拿不到数据。现在改为照上游做法**一律回包、一律供数**，
+读不出握手内容时**每位玩家只记一条 INFO**（含原始前 24 字节，便于排查），不再刷屏。
 
 ---
 

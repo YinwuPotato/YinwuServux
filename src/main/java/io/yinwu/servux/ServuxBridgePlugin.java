@@ -29,6 +29,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -64,6 +65,14 @@ import java.util.zip.GZIPOutputStream;
  * 且 {@code servux} 字符串以 {@code "servux-fabric-<客户端MC版本>"} 开头，否则它会注销通道并关掉 ENTITY_DATA_SYNC；
  * <b>握手之前发的数据包会被客户端直接丢弃</b>。
  *
+ * <h2>多版本（ViaVersion / ViaBackwards）</h2>
+ * 代理只翻译游戏协议，<b>不翻译自建通道的负载</b>，所以跨版本兼容只能在插件里做。
+ * 反编译核对结论：1.21.11（MiniHUD 0.38.x）、26.2（0.40.x）、26.3（0.41.x）的线上格式<B>完全一致</B>
+ * ——包类型编号 1–13 相同、握手都用原版 {@code writeNbt}、数据响应用 masa gzip；
+ * 唯一差异是元数据里的 {@code servux} 版本串（要与客户端自己的 MC 版本对应）。
+ * 因此插件把客户端自报的 {@code version}/{@code servux} <b>原样回显</b>，无需知道对方版本即可兼容。
+ * （更老的 MiniHUD 如 1.20.1 的 0.27.1 根本没有 ServuxEntitiesPacket，无从支持。）
+ *
  * <h2>区域线程（Canvas / Folia）</h2>
  * 插件消息回调在玩家所属区域线程上执行，那里只读玩家自身状态（位置/世界）；
  * 读取方块实体或实体必须用 {@link org.bukkit.Bukkit#getRegionScheduler()} 跳到其所属区域线程，
@@ -88,6 +97,8 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
 
     private final Set<UUID> registered = ConcurrentHashMap.newKeySet();
     private final Map<UUID, int[]> rateWindows = new ConcurrentHashMap<>();
+    /** 记录「已提示过该玩家握手异常」，每位玩家每次进服只提示一条，避免刷屏 */
+    private final Set<UUID> warnedIncompatible = ConcurrentHashMap.newKeySet();
 
     // ---- config.yml ----
     private String permission = "";
@@ -123,6 +134,7 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, CHANNEL);
         registered.clear();
         rateWindows.clear();
+        warnedIncompatible.clear();
         getLogger().info("[servux] 已停用");
     }
 
@@ -141,6 +153,7 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         UUID id = event.getPlayer().getUniqueId();
         registered.remove(id);
         rateWindows.remove(id);
+        warnedIncompatible.remove(id);
     }
 
     // ------------------------------------------------------------------
@@ -177,32 +190,90 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         }
     }
 
-    /** 类型 2：客户端握手。必须回类型 1 元数据，否则 MiniHUD 会关掉功能并注销通道。 */
+    /**
+     * 类型 2：客户端握手 —— 必须回类型 1 元数据，否则 MiniHUD 会注销通道并关掉数据同步。
+     *
+     * <p>照上游 Servux 的做法：<b>不管客户端自报什么版本都回元数据、都供数</b>，由客户端自己校验。
+     * 旧实现「版本低于 2 就不回包」会让客户端一直重试（实测每秒 11 次）并刷屏，
+     * 还让本来能用的客户端（如 26.2 的 MiniHUD 0.40.x）完全拿不到数据。
+     *
+     * <p><b>多版本</b>：反编译核对后确认，1.21.11 / 26.2 / 26.3 的 MiniHUD 线上格式完全一致
+     * （包类型 1–13 相同、握手都用原版 {@code writeNbt}、数据响应用 masa gzip），
+     * 差异只在元数据里的 {@code servux} 版本串 —— 客户端会要求它以 {@code servux-fabric-<自己的MC版本>} 开头。
+     * 所以这里把客户端自报的 {@code version}/{@code servux} <b>原样回给它</b>：不用知道对方是什么版本，
+     * 每个版本的客户端都能通过自己的校验。（ViaVersion/ViaBackwards 不翻译自建通道的负载，只能由插件处理。）
+     */
     private void handleMetadataRequest(Player player, FriendlyByteBuf in) {
+        UUID id = player.getUniqueId();
         int clientVersion = -1;
+        String clientServux = "";
+
+        // 先取样原始字节：既能诊断，也能在原版读取失败时兜底
+        byte[] raw = new byte[0];
+        int readable = in.readableBytes();
+        String hex;
         try {
-            CompoundTag request = in.readNbt();
-            if (request != null && request.contains("version")) {
-                clientVersion = request.getInt("version").orElse(-1);
-            }
-        } catch (Throwable ignored) {
-            // 客户端没带 NBT 也无妨，按版本不足处理
-        }
-        if (clientVersion < PROTOCOL_VERSION) {
-            getLogger().warning("[servux] " + player.getName() + " 的协议版本为 " + clientVersion
-                    + "，低于要求的 " + PROTOCOL_VERSION + "，拒绝");
-            return;
-        }
-        if (!hasPermission(player)) {
-            if (debug) {
-                getLogger().info("[servux] " + player.getName() + " 无权限，拒绝握手");
-            }
-            return;
+            raw = new byte[Math.min(readable, 128)];
+            in.getBytes(in.readerIndex(), raw);
+            hex = toHex(raw, Math.min(raw.length, 24)) + (readable > 24 ? " … 共 " + readable + " 字节" : "");
+        } catch (Throwable t) {
+            hex = "(取样失败: " + t.getClass().getSimpleName() + ")";
         }
 
+        try {
+            CompoundTag request = in.readNbt();
+            if (request != null) {
+                if (request.contains("version")) {
+                    clientVersion = request.getInt("version").orElse(-1);
+                }
+                if (request.contains("servux")) {
+                    clientServux = request.getString("servux").orElse("");
+                }
+            }
+        } catch (Throwable ignored) {
+            // 读不出就走下面的字节兜底
+        }
+        if (clientVersion < 0) {
+            clientVersion = scanInt(raw, "version");
+        }
+        if (clientServux.isEmpty()) {
+            clientServux = scanString(raw, "servux");
+        }
+
+        // 回显客户端自报的版本与版本串 → 各版本客户端都能通过自己的校验；读不到则用配置里的默认值
+        sendMetadata(player,
+                clientVersion > 0 ? clientVersion : PROTOCOL_VERSION,
+                clientServux.isEmpty() ? servuxVersionString : clientServux);
+
+        if (debug) {
+            getLogger().info("[servux] 握手 " + player.getName() + "：客户端 version=" + clientVersion
+                    + "，servux=\"" + clientServux + "\"，原始: " + hex);
+        } else if (clientServux.isEmpty() && warnedIncompatible.add(id)) {
+            getLogger().info("[servux] " + player.getName() + " 的握手数据里读不出 servux 版本串（version="
+                    + clientVersion + "），已按上游做法照常回包并供数；"
+                    + "若其 MiniHUD 没有数据显示，请把这条日志发给管理员。原始前 24 字节: " + hex);
+        }
+
+        if (!hasPermission(player)) {
+            if (debug) {
+                getLogger().info("[servux] " + player.getName() + " 无权限，拒绝供数");
+            }
+            registered.remove(id);
+            return;
+        }
+        registered.add(id);
+    }
+
+    /**
+     * 回类型 1 元数据。
+     *
+     * @param version 回给客户端的协议版本（通常原样回它自报的值，各版本客户端各自校验自己的期望值）
+     * @param servux  版本串，必须与客户端 MC 版本对应 → 直接回显客户端报上来的那一串
+     */
+    private void sendMetadata(Player player, int version, String servux) {
         CompoundTag metadata = new CompoundTag();
-        metadata.putInt("version", PROTOCOL_VERSION);
-        metadata.putString("servux", servuxVersionString);
+        metadata.putInt("version", version);
+        metadata.putString("servux", servux);
         metadata.putString("provider", "YinwuServux (Canvas)");
 
         FriendlyByteBuf out = new FriendlyByteBuf(Unpooled.buffer());
@@ -213,11 +284,61 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         } finally {
             out.release();
         }
+    }
 
-        registered.add(player.getUniqueId());
-        if (debug) {
-            getLogger().info("[servux] 已与 " + player.getName() + " 完成握手（客户端协议版本 " + clientVersion + "）");
+    /**
+     * 字节兜底：在原始负载里找 NBT 的 ASCII 键名，取紧随其后的 4 字节 int。
+     * 万一某个版本的 NBT 编码细节不同、原版 {@code readNbt()} 解析失败时用。
+     */
+    private static int scanInt(byte[] data, String key) {
+        byte[] k = key.getBytes(StandardCharsets.US_ASCII);
+        outer:
+        for (int i = 2; i + k.length + 4 <= data.length; i++) {
+            for (int j = 0; j < k.length; j++) {
+                if (data[i + j] != k[j]) {
+                    continue outer;
+                }
+            }
+            // 键名前面应依次是两字节长度与标签类型，这里只校验长度
+            if (data[i - 2] == 0 && data[i - 1] == (byte) k.length) {
+                int at = i + k.length;
+                return ((data[at] & 0xFF) << 24) | ((data[at + 1] & 0xFF) << 16)
+                        | ((data[at + 2] & 0xFF) << 8) | (data[at + 3] & 0xFF);
+            }
         }
+        return -1;
+    }
+
+    /** 字节兜底：取 NBT 里某个字符串键的值（{@code [00 len][key][00 len][value]}）。 */
+    private static String scanString(byte[] data, String key) {
+        byte[] k = key.getBytes(StandardCharsets.US_ASCII);
+        outer:
+        for (int i = 2; i + k.length + 2 <= data.length; i++) {
+            for (int j = 0; j < k.length; j++) {
+                if (data[i + j] != k[j]) {
+                    continue outer;
+                }
+            }
+            if (data[i - 2] == 0 && data[i - 1] == (byte) k.length) {
+                int at = i + k.length;
+                int len = ((data[at] & 0xFF) << 8) | (data[at + 1] & 0xFF);
+                if (len > 0 && at + 2 + len <= data.length) {
+                    return new String(data, at + 2, len, StandardCharsets.US_ASCII);
+                }
+            }
+        }
+        return "";
+    }
+
+    private static String toHex(byte[] data, int length) {
+        StringBuilder sb = new StringBuilder(length * 3);
+        for (int i = 0; i < length; i++) {
+            if (i > 0) {
+                sb.append(' ');
+            }
+            sb.append(Character.forDigit((data[i] >> 4) & 0xF, 16)).append(Character.forDigit(data[i] & 0xF, 16));
+        }
+        return sb.toString();
     }
 
     // ------------------------------------------------------------------
