@@ -1,5 +1,6 @@
 .gradle/
 build/
 libs/
+libs-26.2/
 run/
 *.log
