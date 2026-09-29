@@ -1,8 +1,13 @@
 # 构建产物
 out/
 *.class
+*.jar
 *.jar.tmp
 build-args.txt
+
+# 成品 jar 走 Release，但要保留 Gradle Wrapper（VillagerPin 构建必需）
+!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
 
 # 第三方客户端 mod（不要随仓库分发，让使用者自行从 Modrinth/CurseForge 获取）
 客户端mod/
