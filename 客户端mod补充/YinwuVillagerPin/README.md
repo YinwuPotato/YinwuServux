@@ -109,3 +109,7 @@ gradlew.bat build
   - `fabric.mod.json` 把范围限定在 MC `>=26.2 <26.4`、MiniHUD `>=0.40.0 <0.42.0`、malilib `>=0.29.0 <0.31.0`，版本不对时 Fabric 直接拒绝加载（不会崩）
   - mixin 配置为 `required: false` + `defaultRequire: 0`：即使将来签名变了，也**只在日志里留一条 warning，客户端照常启动**，效果自动缺席
 - 吸附的前提是「村民离讲台 1.7 格以内」（MiniHUD 的原有条件），村民走远时牌子仍会跟走 —— 这与单人模式的行为一致
+
+## 8. License | 许可证
+
+LGPL-3.0 —— 见仓库根 [LICENSE](../../../LICENSE)。本 mod 不含 MiniHUD / malilib / fabric-api 的代码，那些上游项目的许可各自独立。

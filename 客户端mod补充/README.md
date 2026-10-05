@@ -45,3 +45,10 @@ MiniHUD 的判定是「村民离讲台 ≤ 1.7 格」才吸附。所以：
 ---
 
 上游相关：`..\上游issue草稿-MiniHUD村民牌吸附.md`（可作为给 MiniHUD 的 issue 草稿）。
+
+---
+
+## License | 许可证
+
+本目录下的 `YinwuVillagerPin` 是自研客户端 mod，LGPL-3.0 —— 见仓库根 [LICENSE](../LICENSE)。
+它依赖但**不包含** MiniHUD / malilib / fabric-api，那些上游项目的许可各自独立。

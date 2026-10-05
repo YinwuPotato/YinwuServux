@@ -319,3 +319,9 @@ else                                    return mc.level;              // 多人 
 
 **该客户端补丁已实现并构建完成**，见 `客户端mod补充\YinwuVillagerPin\`（源码）与 `客户端mod补充\yinwu-villager-pin-1.0.0.jar`（成品，仅客户端，可选装）。
 思路：MiniHUD 已经把含 `Brain` 的实体 NBT 缓存在本地（数据来自本插件），补丁在渲染前把其中的 `job_site` 写进客户端村民的脑，MiniHUD 原有的吸附判定随即自行通过 —— 不改 MiniHUD 一行逻辑，服务端零改动，没装的人完全不受影响。
+
+---
+
+## License | 许可证
+
+LGPL-3.0 —— 见 [LICENSE](LICENSE)。
