@@ -16,3 +16,7 @@ build-args.txt
 *.log
 .DS_Store
 Thumbs.db
+
+### 构建/运行产物（统一补充）###
+dependency-reduced-pom.xml
+*.stackdump
