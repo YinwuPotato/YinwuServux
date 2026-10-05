@@ -21,7 +21,7 @@ max-distance: 8.0
 # 每个玩家每秒最多请求次数（0 = 不限制）
 # 注意：MiniHUD 的"图书管理员交易搜索"会对范围内每个村民各发一次实体请求，
 # 所以别设太小；MiniHUD 客户端自己也有请求限速，这里留出余量（默认 40/秒）。
-max-requests-per-second: 40
+max-requests-per-second: 80
 
 # 当请求的是【其他玩家】实体时，是否把其物品栏/末影箱内容一并返回。
 # false（默认，与 Servux 默认一致）：清空 Inventory / EnderItems，只给外观类数据。

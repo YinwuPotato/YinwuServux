@@ -93,6 +93,14 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
      */
     public static final String CLIENTVER_CHANNEL = "yinwu:clientver";
 
+    /** 结构边界框通道（{@code servux:structures}，协议版本 3）。 */
+    public static final String STRUCTURES_CHANNEL = ServuxStructures.CHANNEL;
+
+    /** 结构通道实现（大包走 PacketSplitter 分片）。 */
+    private ServuxStructures structures;
+    /** 全局 tick 计数（结构通道的超时重发用）。 */
+    private long serverTick;
+
     private static final int S2C_METADATA = 1;
     private static final int C2S_METADATA_REQUEST = 2;
     private static final int C2S_BLOCK_ENTITY_REQUEST = 3;
@@ -155,6 +163,16 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         getServer().getMessenger().registerIncomingPluginChannel(this, CHANNEL, this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, CHANNEL);
         getServer().getMessenger().registerIncomingPluginChannel(this, CLIENTVER_CHANNEL, this);
+        getServer().getMessenger().registerIncomingPluginChannel(this, STRUCTURES_CHANNEL, this);
+        getServer().getMessenger().registerOutgoingPluginChannel(this, STRUCTURES_CHANNEL);
+        this.structures = new ServuxStructures(this);
+        // 结构同步：每 40 tick 检查一次（对齐上游节奏）
+        getServer().getGlobalRegionScheduler().runAtFixedRate(this, task -> {
+            serverTick += 1L;
+            if (structures != null) {
+                structures.tick(serverTick);
+            }
+        }, 1L, 1L);
         getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("[servux] 已启用：通道=" + CHANNEL
                 + "，权限=" + (permission.isEmpty() ? "（所有人）" : permission)
@@ -174,6 +192,9 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         getServer().getMessenger().unregisterIncomingPluginChannel(this, CHANNEL, this);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this, CHANNEL);
         getServer().getMessenger().unregisterIncomingPluginChannel(this, CLIENTVER_CHANNEL, this);
+        getServer().getMessenger().unregisterIncomingPluginChannel(this, STRUCTURES_CHANNEL, this);
+        getServer().getMessenger().unregisterOutgoingPluginChannel(this, STRUCTURES_CHANNEL);
+        getServer().getGlobalRegionScheduler().cancelTasks(this);
         registered.clear();
         rateWindows.clear();
         warnedIncompatible.clear();
@@ -239,6 +260,10 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         rateWindows.remove(id);
         warnedIncompatible.remove(id);
         clientVersions.remove(id);
+        PacketSplitter.clear(id);
+        if (structures != null) {
+            structures.onQuit(id);
+        }
     }
 
     /**
@@ -278,6 +303,13 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
         if (CLIENTVER_CHANNEL.equals(channel)) {
             handleClientVersion(player, message);
+            return;
+        }
+        if (STRUCTURES_CHANNEL.equals(channel)) {
+            // 注册/注销包实测没有分片前缀，是否需要分片由 ServuxStructures 自己判断
+            if (structures != null) {
+                structures.handle(player, message);
+            }
             return;
         }
         if (!CHANNEL.equals(channel)) {
@@ -653,6 +685,37 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         }, null, 1L);
     }
 
+    // ---- 供 ServuxStructures 使用（区域线程派发与多片发送）----
+
+    /** 结构通道的元数据版本串：复用实体通道那套「回客户端自报版本」的策略。 */
+    String structuresVersionString(Player player) {
+        String detected = applyVersionOverride(player, detectClientMcVersion(player));
+        return "servux-fabric-" + detected;
+    }
+
+    /** 派发到玩家自己的区域线程。 */
+    void schedulerAtEntity(Player player, Runnable task) {
+        player.getScheduler().execute(this, task, null, 1L);
+    }
+
+    /** 派发到某个区块所属的区域线程（Folia 下读 Chunk 必须这样）。 */
+    void schedulerAtChunk(org.bukkit.World world, int chunkX, int chunkZ, Runnable task) {
+        getServer().getRegionScheduler().execute(this, world, chunkX, chunkZ, task);
+    }
+
+    /** 在玩家自己的区域线程上，把一个负载的所有分片依次发出去。 */
+    void sendOnPlayerThread(Player player, String channel, java.util.List<byte[]> parts, String what) {
+        player.getScheduler().execute(this, () -> {
+            if (!player.isOnline()) {
+                return;
+            }
+            for (byte[] part : parts) {
+                player.sendPluginMessage(this, channel, part);
+            }
+            debugLog(player, "已发送 " + what);
+        }, null, 1L);
+    }
+
     /** 类型 5 响应：[varint 5][BlockPos][int 长度][gzip NBT] */
     private byte[] buildBlockResponse(BlockPos pos, CompoundTag nbt) throws IOException {
         byte[] gz = masaGzip(nbt);
@@ -742,7 +805,7 @@ public final class ServuxBridgePlugin extends JavaPlugin implements PluginMessag
         }
     }
 
-    private void debugLog(Player player, String message) {
+    void debugLog(Player player, String message) {
         if (debug) {
             getLogger().info("[servux] " + player.getName() + "：" + message);
         }
