@@ -16,14 +16,16 @@ Fabric 端靠 Servux 这个 mod；Canvas 跑不了 Fabric mod，所以这里用�
 
 所有包以 **varint 类型号**开头（**注意：类型号不是枚举序号**）：
 
-| 类型号 | 名称 | 负载 | 方向 |
-|---|---|---|---|
-| 1 | S2C_METADATA | 原版 NBT | 服务端 → 客户端 |
-| 2 | C2S_METADATA_REQUEST | 原版 NBT（`{version:2}`） | 客户端 → 服务端 |
-| 3 | C2S_BLOCK_ENTITY_REQUEST | BlockPos（打包 long） | 客户端 → 服务端 |
-| 5 | S2C_BLOCK_NBT_RESPONSE_SIMPLE | BlockPos + int 长度 + gzip NBT | 服务端 → 客户端 |
-| 7 | C2S_UNREGISTER_REPLY | 原版 NBT | 客户端 → 服务端 |
-| 10/11 | S2C_NBT_RESPONSE_START / DATA | 分片（本插件暂未实现） | 服务端 → 客户端 |
+| 类型号 | 名称 | 负载 | 方向 | 本插件 |
+|---|---|---|---|---|
+| 1 | S2C_METADATA | 原版 NBT | 服务端 → 客户端 | ✅ |
+| 2 | C2S_METADATA_REQUEST | 原版 NBT（`{version:2}`） | 客户端 → 服务端 | ✅ |
+| 3 | C2S_BLOCK_ENTITY_REQUEST | BlockPos（打包 long） | 客户端 → 服务端 | ✅ |
+| 4 | C2S_ENTITY_REQUEST | int 实体 id | 客户端 → 服务端 | ✅ |
+| 5 | S2C_BLOCK_NBT_RESPONSE_SIMPLE | BlockPos + int 长度 + gzip NBT | 服务端 → 客户端 | ✅ |
+| 6 | S2C_ENTITY_NBT_RESPONSE_SIMPLE | int 实体 id + int 长度 + gzip NBT | 服务端 → 客户端 | ✅ |
+| 7 | C2S_UNREGISTER_REPLY | 原版 NBT | 客户端 → 服务端 | ✅ |
+| 10/11 | S2C_NBT_RESPONSE_START / DATA | 分片 | 服务端 → 客户端 | ✅ 见 §附录 |
 
 其中 **gzip NBT 是 masa 自己的格式**（`DataByteBufUtils`）：
 
@@ -192,10 +194,16 @@ player-version-overrides:
    脚本会自动找 **最新** 的 `canvas-api-*.jar`、`Van\versions\canvas-*.jar` 与 `Van\libraries\` 下全部依赖。
    （classpath 有 1.4 万字符，超过 cmd 的 `set` 上限 8191，所以脚本委托 PowerShell 写 javac 的 `@argfile` ——
    直接在批处理里拼 classpath 会被静默截断，表现为莫名的 `找不到 net.md_5.bungee.api.chat.BaseComponent`。）
-2. 把 `yinwu-servux-1.0.0.jar` 放进 `<服务器>\Van\plugins\`
+2. 把 `yinwu-servux-1.1.0.jar` 放进 `<服务器>\Van\plugins\`
 3. 重启 Van（首次会释放 `plugins/YinwuServux/config.yml`）
-4. 启动日志应出现：
-   `[servux] 已启用：通道=servux:entity_data，权限=…，元数据版本串=servux-fabric-26.3，最大距离=8.0 格，限速=10/秒`
+4. 启动日志应出现（**注意前缀是 `[servux]`**）：
+
+   ```
+   [servux] 已启用：通道=servux:entity_data，权限=…，元数据版本串=servux-fabric-26.3，最大距离=8.0 格，限速=80/秒，可读他人物品栏=false
+   [servux] 支持：方块容器（类型 3/5）+ 实体（类型 4/6，村民信息/箱子船等）
+   ```
+
+   若 `permission` 留空，还会多一条警告：`注意：permission 为空 = 任何玩家都能读取附近容器与实体的数据…`
 
 ## 4. 配置（`plugins/YinwuServux/config.yml`）
 
@@ -204,10 +212,17 @@ player-version-overrides:
 | `permission` | 空 | 留空 = 所有玩家可用（**等于允许翻别人箱子**）；建议填 `yinwu.servux.use` 并用 LuckPerms 授权 |
 | `servux-version-string` | `servux-fabric-26.3` | 客户端校验的版本串；服务器 26.3 → 26.3 客户端 |
 | `max-distance` | `8.0` | 允许请求的方块与玩家眼睛的最大距离；`0` = 不限。用于挡住改包客户端远程翻箱 |
-| `max-requests-per-second` | `10` | 每玩家每秒请求上限，防刷 |
+| `max-requests-per-second` | `80` | 每玩家每秒请求上限，`0` = 不限。**别设太小**：MiniHUD 的"图书管理员交易搜索"会对范围内每个村民各发一次实体请求 |
+| `allow-other-player-inventory` | `false` | 请求其他玩家实体时是否把其物品栏/末影箱内容一并返回。`false` 与 Servux 默认一致 |
 | `debug` | `false` | 打印每次请求/回包 |
+| `client-version-overrides` | `{}` | 按识别到的版本改写版本串（共用协议号的小版本兜底），见 config.yml 注释 |
+| `player-version-overrides` | `{}` | 按玩家名改写版本串（key 不区分大小写） |
 
 命令：`/yinwuservux status`（看配置与已握手玩家数）、`/yinwuservux reload`（热重载配置）
+
+- 别名：`/yservux`
+- 命令权限：`yinwu.servux.admin`（默认 OP）
+- 享受功能权限：`yinwu.servux.use`（默认所有玩家，需填进上面的 `permission` 键才生效）
 
 ## 5. 客户端需要什么
 - **MiniHUD**（Fabric，26.3 对应 0.41.x）
@@ -222,9 +237,10 @@ player-version-overrides:
 ## 6. 已知限制
 
 - **实体分支已实现**（类型 4/6）：村民信息与交易显示、箱子船 / 驴 / 展示框等实体容器都能预览
+- **分片已实现**（类型 10/11）：单个容器 NBT 压缩后超过单片上限时自动分片。上限取自 MC 的 custom payload 硬限——
+  S2C 单片 1,048,576 字节、C2S 单片 32,767 字节，接收累计上限 16 MB。相关常量在 `PacketSplitter.java:34-38`
+- **结构边界框已实现**（独立通道 `servux:structures`，协议版本 3）：让 MiniHUD 画出村庄/试炼密室等结构的边界框，见 §附录
 - 请求其他玩家实体时，默认清空其 `Inventory` / `EnderItems`（`allow-other-player-inventory: false`，与 Servux 默认一致）
-- **不支持分片**：单个容器 NBT 压缩后超过约 32 KB 时（例如塞满成书的箱子）不回包，服务端日志会给出提示。
-  Servux 在这种情况用 10/11 分片，需要的话可以补
 - 不做"服务端给玩家发物品栏"那类额外权限控制（对应 Servux 的 `nbtAllowPlayerInventory` 等设置）
 
 ## 7. 排查
@@ -235,6 +251,41 @@ player-version-overrides:
 | 握手到了但预览不显示 | 元数据里的 `servux` 版本串是否与客户端 MC 版本一致；日志里有没有"协议版本不足"警告 |
 | 只有远处的箱子能预览 | `max-distance` 调大 |
 | 预览一段时间后失效 | 客户端可能因超限注销；看 `debug` 日志与 `max-requests-per-second` |
+
+## 附录：结构边界框通道 `servux:structures`（1.1.0 新增）
+
+除容器预览外，本插件还实现了 masa Servux 的**结构同步**通道，让 MiniHUD 能在世界里画出结构边界框（村庄、试炼密室、远古城市等）。
+
+| 项 | 值 |
+|---|---|
+| 通道 | `servux:structures` |
+| 协议版本 | 3 |
+| 包类型号 | 1 `S2C_METADATA` · 2 `S2C_STRUCTURE_DATA` · 3 `C2S_STRUCTURES_REGISTER` · 4 `C2S_STRUCTURES_UNREGISTER` |
+| 刷新节奏 | 每 tick 检查，同一结构 600 tick（30 秒）后重发 |
+| 视距余量 | 额外 2 个区块 |
+| 每 tick 区块上限 | 160（Folia 上把首轮同步摊开，避免一次派发几百个区域任务） |
+| 大包 | 走 `PacketSplitter` 分片 |
+
+**发给客户端的 NBT**（键名由客户端 `minihud.util.StructureData` 的解析代码确定）：
+
+```
+{ Structures: [ { id: "minecraft:village_plains",   // 必须是客户端 StructureType 认得的原版结构名
+                  ChunkX: int, ChunkZ: int,         // 客户端不读，按原版格式带上
+                  Children: [ { BB: [I; x1,y1,z1,x2,y2,z2] }, ... ] } ] }
+```
+
+> ⚠️ **BB 的上界是闭区间**（原版 `BoundingBox` 的 NBT 约定），而 Bukkit 的 `BoundingBox` 上界是**开区间**——
+> 写入时要 −1，否则客户端画出来的框会大 1 格。
+
+**为什么读已生成数据而不是按种子算**：MC 的结构定位是 `structureSeed(世界种子低 48 位) + 每个结构集各自的 salt`，
+不同结构用不同派生随机源，插件无法可靠复刻；只要区块生成完，结果就在区块数据里。
+
+**一个踩过的坑**：结构通道收到的注册/注销包**没有分片长度前缀**，包体直接是 `[varint 类型][NBT]`。
+若按"首片带 varint 总长"去读，会把类型号当总长、把 NBT 的 `0x0A`(TAG_Compound) 当包类型，
+于是日志出现"结构通道收到未处理的包类型 10"。所以实现里先探测第一个 varint 是否是合法包类型：
+是 → 直接当完整包；不是 → 才交给 `PacketSplitter` 累积。
+
+---
 
 ## 8. 为什么"村民交易牌"不会固定在讲台上（调查结论，2026-09-28）
 
